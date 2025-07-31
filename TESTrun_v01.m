@@ -1,10 +1,12 @@
 % TEST RUNNER                                                        7/2025
 % -------------------------------------------------------------------------
 % for Brno University of Technology ECG Quality Database (BUT QDB)
+% Data available at: https://physionet.org/content/butqdb/1.0.0/
+% Code available at: https://github.com/BioSig-BUT/BUT-QDB-supplement
 %                                                        
-% The script is intended for evaluating the performance of algorithms designed 
-% for estimating the quality of ECG signals on BUT QDB. The script can be divided 
-% into four parts in terms of functionality:
+% The script is intended for signals and annotation reading, evaluating the 
+% performance of algorithms designed for estimating the quality of ECG signals 
+% on BUT QDB. The script can be divided into four parts in terms of functionality:
 %
 % 1) Data Reading
 % The script provides sequential reading of the annotated parts of ECG
@@ -40,23 +42,24 @@
 % duration, the distribution of Q1/Q2/Q3 segments based on annotations, F1 scores for 
 % Q1/Q2/ Q3, as well as overall accuracy.
 % Segmentation analysis examines the number of segments created, the maximum, 
-% minimum, mean and median segment lengths. These statistics are then compared 
+% minimum, mean and median segment duration. These statistics are then compared 
 % between the actual quality annotations provided by the experts and predictions 
 % according to the tested algorithm.
 % All results are displayed in the Matlab command line and are also saved in a 
 % separate *.xlsx file. The results of each run are stored in a separate sheet 
 % labeled with date and time. 
 %
-% Created by authors of BUT QDB, 2025
+% Created by authors of BUT QDB, 7/2025
+% MIT License
 % -------------------------------------------------------------------------
 
 close all; clc; clear
 % -- Settings -------------------------------------------------------------
-plot_waveforms = 0;     % Select (0/1) if the user wants to plot ECG waveforms and quality annotations
+plot_waveforms = 0;         % Select (0/1) if the user wants to plot ECG waveforms and quality annotations
 
 % Select whether you want to test your algorithm on all/train/test data by 
 % inserting appropriate parameter in "choseDATA" function (Primarily intended for test data)
-REC = choseDATA('test');     % all / train / test
+REC = choseDATA('test');    % all / train / test
 % -------------------------------------------------------------------------
 
 L = 0;
@@ -78,7 +81,6 @@ for i = 1 : size(REC,1)
       	to = REC(i,j+1); to_acc = round(REC(i,j+1)/10);
         
         [ecg,fs_ecg,tm_ecg]=rdsamp([ID,'\',ID,'_ECG'],[],to,from,0);   % rdsamp is function from WFDB toolbox
-        [acc,fs_acc,tm_acc]=rdsamp([ID,'\',ID,'_ACC'],[],to_acc,from_acc,0);
 
         ann  = ann_reader_v02([ID,'\',ID,'_ANN'],4,from,to);    % anntr = 4; 4 is consensus of anotators
      	ann = [int8(ann); 4]; 
@@ -87,7 +89,7 @@ for i = 1 : size(REC,1)
     % --- Quality estimation algorithm ------------------------------------
         % The output is expected to be a column vector 'q' of the same length 
         % as the ECG signal. The 'q' vector has ONLY the values 1,2 or 3, which 
-        % reflect the quality classes Q1, Q2 and Q3 respectively.
+        % reflect the quality classes Q1, Q2 and Q3, respectively.
         
         q = randi([1 3],1,length(ecg))';
     % ---------------------------------------------------------------------
@@ -96,15 +98,15 @@ for i = 1 : size(REC,1)
         
         if plot_waveforms
             figure;
+            [acc,fs_acc,tm_acc]=rdsamp([ID,'\',ID,'_ACC'],[],to_acc,from_acc,0);
             ax1 = subplot(3,1,1); plot(tm_ecg,ecg); xlabel('Time [s]'); ylabel('Voltage [\muV]')
             title(sprintf('Record %0.0f, part %0.0f.',REC(i,1),part)); legend('ECG')
             ax2 = subplot(3,1,2); plot(tm_acc,acc(:,1)); hold on; plot(tm_acc,acc(:,2)); plot(tm_acc,acc(:,3));
-            xlabel('Time [s]'); ylabel('ACC [mili-g]'); legend('X-ax','Y-ax','Z-ax')
+            xlabel('Time [s]'); ylabel('ACC [mili-g]'); legend('X-axis','Y-axis','Z-axis')
             ax3 = subplot(3,1,3); plot(tm_ecg,ann(1:end-1)); hold on; plot(tm_ecg,q(1:end-1)); 
             xlabel('Time [s]'); ylabel('Quality class [-]'); legend('Actual','Predicted')
             linkaxes([ax1 ax2 ax3],'x'); ylim([0.5 3.5]); 
         end
-
         Ln = Ln + to - from + 1; 
         waitbar(Ln/L,w,sprintf('%0.0f: Record %0.0f-%0.0f, Time: %0.0f sec (%0.0f %%)',i,REC(i,1),part,toc,Ln/L*100));
     end
@@ -182,7 +184,6 @@ switch part
         REC(4,:) =  [103002,28800001,30000000,57600001,58800000,NaN(1,4)];
         REC(5,:) =  [103003,28800001,30000000,57600001,58800000,NaN(1,4)];
         REC(6,:) =  [104001,28800001,30000000,57600001,58800000,NaN(1,4)];
-        % REC(7,:) =  [105001,1       ,139147000,NaN(1,6)];
         REC(7,:) =  [105001,46800001,139147000,NaN(1,6)];
         REC(8,:) =  [111001,1       ,90645000,NaN(1,6)];
         REC(9,:) =  [113001,28800001,30000000,36120000,37319999,57600001,58800000,NaN(1,2)];
@@ -218,39 +219,44 @@ switch part
 end
 end
 
-function ann=ann_reader_v02(annotation,anntr,from,to)
-% ANNOTATION READER                                                  4/2024
+function ann=ann_reader_v02(annotation,Exp,from,to)
+% ANNOTATION READER                                                  7/2025
 % -------------------------------------------------------------------------
 % This code is dedicated for reading of quality annotations of BUT QDB.
 % Input: annotation - file (.csv)
-%        anntr      - choice of annotator (1,2,3 or 4 ~ anntr1,anntr2,anntr3 or consenzus of all anntrs)
+%        Exp        - choice of expert(s) (1,2,3 or 4 ~ Exp1,Exp2,Exp3 or median consensus MC)
 %        from       - from sample
 %        to         - to sample
 %
 % Otput: variable "ann" - vector of annotations sample-by-sample
 %
-% Example of use: ann=ann_reader('100001_ANN.csv',4,1,1000000);
-% Example of use: ann=ann_reader('100001_ANN.csv',[1 4],100,5000);
-% Created by authors of BUT QDB, 2024
+% Example of use: 
+% ann = ann_reader_v02('100001_ANN.csv');                   -> size(ann) = [87087000, 4]
+% ann = ann_reader_v02('100001_ANN.csv',4,1,1000);          -> size(ann) = [1000, 1]
+% ann = ann_reader_v02('100001_ANN.csv',[1 4],101,500);     -> size(ann) = [400, 2]
+% ann = ann_reader_v02([ID,'\',ID,'_ANN'],1:3,1001);        -> size(ann) = [87086000, 3]
+%
+% Created by authors of BUT QDB, 7/2025
 % -------------------------------------------------------------------------
 
 T = readtable([annotation,'.csv']);
 TA = table2array(T);
-
 sl = [1 4 7 10];
-annsize = [TA(end,sl(~isnan(TA(end,sl+1)))+1),length(anntr)];
-ann = zeros(annsize);
+Lann = TA(end,sl(~isnan(TA(end,sl+1)))+1);
 
 if nargin == 1
-    anntr = 1:4;
+    Exp = 1:4;
     from = 1;
-    to = annsize(1);
+    to = Lann(1);
 elseif nargin == 2
     from = 1;
-    to = annsize(1);
+    to = Lann(1);
+elseif nargin == 3
+    to = Lann(1);
 end
 
-poc=0; sl = sl(anntr);
+ann = zeros(to,length(Exp));
+poc=0; sl = sl(Exp);
 for i = sl
     Lan=length(TA(~isnan(TA(:,i))));
     poc=poc+1;
@@ -304,13 +310,13 @@ end
 
 function SegAna = summarySEGS(ANN,Q,fs_ecg)
 
-% -- Annotated segments --
+% -- Annotated segments (Actual) --
 dANN = diff(ANN);       
 seg_ann = diff([0; find(dANN~=0)]);
 seg_ann(seg_ann==1) = [];
 seg_ann = seg_ann/fs_ecg;       % segmants in seconds
 
-% -- Detected segments --
+% -- Detected segments (Predicted) --
 dQ = diff(Q);
 seg_q = diff([0; find(dQ~=0)]);
 seg_q(seg_q==1) = [];       
